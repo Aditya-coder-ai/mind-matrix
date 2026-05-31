@@ -1,0 +1,6 @@
+{
+  "name": "Socratic AI",
+  "description": "An interactive cognitive mentor featuring adaptive Socratic dialogues, visual mastery mapping, and active misconception tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

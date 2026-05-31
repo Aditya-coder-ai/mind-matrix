@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap');
+@import "tailwindcss";
+
+:root {
+  --color-primary-navy: #110038;
+  --color-primary-container: #4F00FF;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #ffffff;
+  
+  --color-secondary-purple: #C2005F;
+  --color-secondary-container: #FFEBF4;
+  --color-on-secondary-container: #660033;
+  
+  --color-academic-green: #007339; /* Darkened for WCAG AA (5.5:1) */
+  --color-academic-green-light: #00994C; /* Darkened for better baseline contrast */
+  --color-academic-green-dark: #E6FFF2;
+  
+  --color-neutral-bg: #F4F7FF;
+  --color-surface-card: #ffffff;
+  --color-surface-container: #E6EDFF;
+  --color-surface-container-low: #ffffff;
+  --color-surface-container-high: #D0DDFF;
+  --color-on-surface-variant: #5A537A; /* Added missing token for legible secondary text */
+  --color-outline-variant: rgba(79, 0, 255, 0.15);
+  --color-academic-red: #E60039;
+  --color-academic-red-container: #FFEBEE;
+  --dot-color: rgba(79, 0, 255, 0.12);
+}
+
+.dark {
+  --color-primary-navy: #FFFFFF;
+  --color-primary-container: #7033FF;
+  --color-on-primary: #000000;
+  --color-on-primary-container: #ffffff;
+  
+  --color-secondary-purple: #FF3399;
+  --color-secondary-container: #4D0026;
+  --color-on-secondary-container: #FFB3D9;
+  
+  --color-academic-green: #00E673;
+  --color-academic-green-light: #33FF99;
+  --color-academic-green-dark: #00331A;
+  
+  --color-neutral-bg: #0A0A12;
+  --color-surface-card: #13131F;
+  --color-surface-container: #1A1A2E;
+  --color-surface-container-low: #0E0E18;
+  --color-surface-container-high: #252542;
+  --color-on-surface-variant: #A49FBE; /* Added missing token for dark mode */
+  --color-outline-variant: rgba(112, 51, 255, 0.3);
+  --color-academic-red: #FF3366;
+  --color-academic-red-container: rgba(255, 51, 102, 0.2);
+  --dot-color: rgba(255, 51, 153, 0.15);
+}
+
+@theme {
+  --color-primary-navy: var(--color-primary-navy);
+  --color-primary-container: var(--color-primary-container);
+  --color-on-primary: var(--color-on-primary);
+  --color-on-primary-container: var(--color-on-primary-container);
+  
+  --color-secondary-purple: var(--color-secondary-purple);
+  --color-secondary-container: var(--color-secondary-container);
+  --color-on-secondary-container: var(--color-on-secondary-container);
+  
+  --color-academic-green: var(--color-academic-green);
+  --color-academic-green-light: var(--color-academic-green-light);
+  --color-academic-green-dark: var(--color-academic-green-dark);
+  
+  --color-neutral-bg: var(--color-neutral-bg);
+  --color-surface-card: var(--color-surface-card);
+  --color-surface-container: var(--color-surface-container);
+  --color-surface-container-low: var(--color-surface-container-low);
+  --color-surface-container-high: var(--color-surface-container-high);
+  --color-on-surface-variant: var(--color-on-surface-variant);
+  --color-outline-variant: var(--color-outline-variant);
+  --color-academic-red: var(--color-academic-red);
+  --color-academic-red-container: var(--color-academic-red-container);
+  
+  --font-sans: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Source Serif 4", Georgia, ui-serif, serif;
+}
+
+/* Custom styles supporting Socratic AI */
+.bg-dot-pattern {
+  background-image: radial-gradient(circle at 1px 1px, var(--dot-color) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Custom Scrollbar for Chat */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+
+/* Pulsing effect for active warning nodes */
+@keyframes pulse-node {
+  0%, 100% {
+    transform: scale(1) translate(-50%, -50%);
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4);
+  }
+  50% {
+    transform: scale(1.04) translate(-50%, -50%);
+    box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);
+  }
+}
+
+.warning-pulse {
+  animation: pulse-node 2s infinite ease-in-out;
+}
