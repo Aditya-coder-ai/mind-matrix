@@ -34,9 +34,8 @@ const PEDAGOGICAL_FALLBACKS: Record<string, Array<{ userKeywords: string[]; resp
   ]
 };
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
 
@@ -47,7 +46,7 @@ async function startServer() {
   });
 
   let ai: GoogleGenAI | null = null;
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
   if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
     try {
@@ -302,35 +301,38 @@ async function startServer() {
     });
   });
 
-  // Vite development vs production serving
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+  // Vite development vs production serving (Skip if deployed on Vercel)
+  if (!process.env.VERCEL) {
+    (async () => {
+      if (process.env.NODE_ENV !== "production") {
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } else {
+        const distPath = path.join(process.cwd(), "dist");
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+          res.sendFile(path.join(distPath, "index.html"));
+        });
+      }
+
+      const startListening = (port: number) => {
+        const server = app.listen(port, "0.0.0.0", () => {
+          console.log(`Socratic AI Node server booted successfully on http://localhost:${port}`);
+        });
+        server.on('error', (e: any) => {
+          if (e.code === 'EADDRINUSE') {
+            console.log(`Port ${port} is in use, trying ${port + 1}...`);
+            startListening(port + 1);
+          } else {
+            console.error(e);
+          }
+        });
+      };
+      startListening(PORT);
+    })();
   }
 
-  const startListening = (port: number) => {
-    const server = app.listen(port, "0.0.0.0", () => {
-      console.log(`Socratic AI Node server booted successfully on http://localhost:${port}`);
-    });
-    server.on('error', (e: any) => {
-      if (e.code === 'EADDRINUSE') {
-        console.log(`Port ${port} is in use, trying ${port + 1}...`);
-        startListening(port + 1);
-      } else {
-        console.error(e);
-      }
-    });
-  };
-  startListening(PORT);
-}
-
-startServer();
+export default app;
