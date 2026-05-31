@@ -20,6 +20,7 @@ import {
 import { AssessmentEngine } from "./AssessmentEngine";
 import { db, socraticSessionConverter, topicNodeConverter, auth } from "./firebase";
 import { doc, setDoc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 import { useAuth } from "./AuthContext";
 import Login from "./components/Login";
@@ -64,7 +65,15 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState(true);
 
   // Initialize Gemini AI Client (Client-Side for Spark Plan compatibility)
-  // The Gemini AI client is now securely hosted on the Vercel serverless backend.
+  const ai = React.useMemo(() => {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (apiKey && apiKey.startsWith("AIza")) {
+      console.log("Mind Matrix: AI Client Initialized");
+      return new GoogleGenerativeAI(apiKey);
+    }
+    console.warn("Mind Matrix: AI Key missing or invalid (should start with AIza). Check Environment Variables.");
+    return null;
+  }, []);
   
   const [profile, setProfile] = useState<StudentProfile>(INITIAL_STUDENT_PROFILE);
   const [nodes, setNodes] = useState<TopicNode[]>(INITIAL_TOPIC_NODES);
@@ -227,30 +236,53 @@ export default function App() {
 
     let payload: any = null;
 
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topicId: activeTopicId,
-          message: text,
-          history: currentSession.messages,
-          currentLevel: currentSession.currentLevel,
-          activeMisconceptions: currentSession.trackedMisconceptions
-        })
-      });
+    if (ai) {
+      try {
+        const systemInstruction = 
+          "You are Socratic AI, an intellectual STEM Socratic Mentor. " +
+          "Your mission is to help students learn by asking guiding Socratic questions. " +
+          "You must analyze their reasoning, detect any misconceptions, update their cognitive mastery level, " +
+          "and provide follow-up Socratic questions based on their target cognitive level (Recall, Understanding, Application, Analysis, Reflection). " +
+          "Return a JSON object with: mentorPrompt, conceptMastery (1-100), knowledgeLevelUpdate (object with level and delta), " +
+          "detectedMisconceptions (array), socraticQuestions (array of strings), difficultyRecommendation (beginner|intermediate|advanced), " +
+          "suggestedPractice, and prerequisites.";
 
-      if (response.ok) {
-        payload = await response.json();
-      } else {
-        console.error("Backend returned an error", await response.text());
+        let contextMsg = `Student is learning topic: ${activeTopicId}\nTarget Cognitive Level: ${currentSession.currentLevel || "understanding"}`;
+        if (currentSession.trackedMisconceptions && currentSession.trackedMisconceptions.length > 0) {
+          contextMsg += `\n\nActive misconceptions to address:\n${currentSession.trackedMisconceptions.map((m: any) => `- ${m.type}: ${m.description} (severity: ${m.severity})`).join('\n')}`;
+        }
+
+        const historyContents = updatedMessages.map((h) => ({
+          role: h.sender === "ai" ? "model" : "user",
+          parts: [{ text: h.text }]
+        }));
+
+        const model = ai.getGenerativeModel({
+          model: "gemini-2.0-flash",
+          generationConfig: {
+            responseMimeType: "application/json",
+          }
+        });
+
+        const result = await model.generateContent({
+          contents: [
+            { role: "user", parts: [{ text: `System Instruction: ${systemInstruction}\n\nContext: ${contextMsg}` }] },
+            ...historyContents
+          ]
+        });
+
+        const responseText = result.response.text();
+        if (responseText) {
+          payload = JSON.parse(responseText.trim());
+        }
+      } catch (e: any) {
+        console.error("Gemini AI failed. Error details:", e.message || e);
       }
-    } catch (e) {
-      console.error("Failed to reach the Vercel backend", e);
     }
 
     // Fallback if AI fails or key is missing
     if (!payload) {
+      console.warn("Using Pedagogical Fallback System...");
       const lowerMsg = text.toLowerCase();
       const fallbacks = PEDAGOGICAL_FALLBACKS[activeTopicId] || [];
       const match = fallbacks.find(f => f.userKeywords.some(kw => lowerMsg.includes(kw)));
@@ -408,24 +440,19 @@ export default function App() {
   };
 
   const handleRequestHint = async () => {
-    try {
-      const response = await fetch("/api/hint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topicId: activeTopicId,
-          currentLevel: currentSession.currentLevel
-        })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.hint) {
-          setHintText(data.hint);
+    if (ai) {
+      try {
+        const hintPrompt = `The student is stuck on topic ${activeTopicId} at cognitive level ${currentSession.currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
+        const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const result = await model.generateContent(hintPrompt);
+        const text = result.response.text();
+        if (text) {
+          setHintText(text.trim());
           return;
         }
+      } catch (err: any) {
+        console.error("Hint generation failed. Details:", err.message || err);
       }
-    } catch (err) {
-      console.error("Hint API failed", err);
     }
     setHintText("Focus on unit dimensions and fundamental relations.");
   };
