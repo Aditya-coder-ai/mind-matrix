@@ -2,7 +2,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import express from "express";
 import cors from "cors";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Message, KnowledgeLevelKey, DifficultyTier } from "./shared/types";
 import { INITIAL_CHAT } from "./shared/data";
 import * as dotenv from "dotenv";
@@ -44,19 +44,12 @@ const PEDAGOGICAL_FALLBACKS: Record<string, Array<{ userKeywords: string[]; resp
   ]
 };
 
-let ai: GoogleGenAI | null = null;
+let ai: GoogleGenerativeAI | null = null;
 const apiKey = process.env.GEMINI_API_KEY;
 
-if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
+if (apiKey && apiKey !== "MY_GEMINI_API_KEY" && apiKey.length > 10) {
   try {
-    ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+    ai = new GoogleGenerativeAI(apiKey);
     logger.info("Secure Server-Side Gemini API Client Initialized successfully.");
   } catch (e) {
     logger.error("Failed to initialize server-side Gemini client wrapper.", e);
@@ -92,50 +85,27 @@ app.post("/api/chat", async (req, res) => {
         parts: [{ text: h.text }]
       }));
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+      const model = ai.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: systemInstruction,
+      });
+
+      const result = await model.generateContent({
         contents: [
           { role: "user", parts: [{ text: contextMsg }] },
-          ...historyContents
+          ...historyContents,
+          { role: "user", parts: [{ text: message }] }
         ],
-        config: {
-          systemInstruction: systemInstruction,
+        generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              mentorPrompt: { type: Type.STRING },
-              conceptMastery: { type: Type.INTEGER },
-              knowledgeLevelUpdate: {
-                type: Type.OBJECT,
-                properties: {
-                  level: { type: Type.STRING, enum: ["recall", "understanding", "application", "analysis", "reflection"] },
-                  delta: { type: Type.INTEGER }
-                }
-              },
-              detectedMisconceptions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    type: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    severity: { type: Type.NUMBER }
-                  }
-                }
-              },
-              socraticQuestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              difficultyRecommendation: { type: Type.STRING },
-              suggestedPractice: { type: Type.STRING },
-              prerequisites: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["mentorPrompt", "conceptMastery"]
-          }
+          temperature: 0.9,
+          topP: 0.95,
+          topK: 40
         }
       });
 
-      if (result.text) {
-        const payload = JSON.parse(result.text.trim());
+      if (result.response.text()) {
+        const payload = JSON.parse(result.response.text().trim());
         logger.info("AI response generated", { topicId, newMastery: payload.conceptMastery });
         return res.json(payload);
       }
@@ -175,11 +145,13 @@ app.post("/api/hint", async (req, res) => {
   if (ai) {
     try {
       const hintPrompt = `The student is stuck on topic ${topicId} at cognitive level ${currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
-      const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: hintPrompt,
+      const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: hintPrompt }] }],
+        generationConfig: { temperature: 0.8 }
       });
-      if (result.text) return res.json({ hint: result.text.trim() });
+      const text = result.response.text();
+      if (text) return res.json({ hint: text.trim() });
     } catch (e) {
       logger.error("Hint generation failed, using standard fallback", e);
     }
@@ -197,25 +169,22 @@ app.post("/api/generate-question", async (req, res) => {
       ${misconceptionContext ? `The student previously struggled with: ${misconceptionContext}. Target this misconception.` : ""}
       Return a JSON object with: question (string), codeSnippet (optional string), expectedAnswer (string), and hints (array of strings).`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
+      const model = ai.getGenerativeModel({
+        model: "gemini-2.0-flash",
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              codeSnippet: { type: Type.STRING },
-              expectedAnswer: { type: Type.STRING },
-              hints: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["question", "hints"]
-          }
+          temperature: 0.9,
+          topP: 0.95,
+          topK: 40
         }
       });
 
-      if (result.text) return res.json(JSON.parse(result.text.trim()));
+      const text = result.response.text();
+      if (text) return res.json(JSON.parse(text.trim()));
     } catch (e) {
       logger.error("Question generation failed", e);
     }
@@ -236,37 +205,22 @@ app.post("/api/assess", async (req, res) => {
       Session data: ${JSON.stringify(sessionData)}
       Return a JSON object matching the AIEvaluationOutput structure.`;
 
-      const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
+      const model = ai.getGenerativeModel({
+        model: "gemini-2.0-flash",
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              concept: { type: Type.STRING },
-              mastery: { type: Type.INTEGER },
-              knowledgeLevels: {
-                type: Type.OBJECT,
-                properties: {
-                  recall: { type: Type.INTEGER },
-                  understanding: { type: Type.INTEGER },
-                  application: { type: Type.INTEGER },
-                  analysis: { type: Type.INTEGER },
-                  reflection: { type: Type.INTEGER }
-                }
-              },
-              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-              weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-              misconceptions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              nextFocus: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["concept", "mastery", "knowledgeLevels", "strengths", "weaknesses", "misconceptions", "nextFocus"]
-          }
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 30
         }
       });
 
-      if (result.text) return res.json(JSON.parse(result.text.trim()));
+      const text = result.response.text();
+      if (text) return res.json(JSON.parse(text.trim()));
     } catch (e) {
       logger.error("Assessment generation failed", e);
     }

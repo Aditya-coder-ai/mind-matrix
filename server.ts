@@ -2,11 +2,16 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Message, KnowledgeLevelKey, DifficultyTier } from "./src/types";
 import { INITIAL_CHAT } from "./src/data";
 
 dotenv.config();
+
+console.log("[BOOT] NODE_ENV:", process.env.NODE_ENV);
+console.log("[BOOT] GEMINI_API_KEY present:", !!(process.env.GEMINI_API_KEY));
+console.log("[BOOT] VITE_GEMINI_API_KEY present:", !!(process.env.VITE_GEMINI_API_KEY));
+console.log("[BOOT] PORT:", process.env.PORT || "3000 (default)");
 
 // Standard Socratic Pedagogical Responses
 const PEDAGOGICAL_FALLBACKS: Record<string, Array<{ userKeywords: string[]; response: any }>> = {
@@ -39,25 +44,30 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
 
-  // Global Error Handler
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Server Error:", err);
-    res.status(500).json({ error: "Internal Server Error", message: err.message });
+  // CORS support for Render deployments
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    if (req.method === "OPTIONS") return res.sendStatus(200);
+    next();
   });
 
-  let ai: GoogleGenAI | null = null;
+  // Health check endpoint for Render
+  app.get("/api/health", (req, res) => {
+    res.json({
+      status: "ok",
+      aiEnabled: !!ai,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  let ai: GoogleGenerativeAI | null = null;
   const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
-  if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
+  if (apiKey && apiKey !== "MY_GEMINI_API_KEY" && apiKey.length > 10) {
     try {
-      ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      });
+      ai = new GoogleGenerativeAI(apiKey);
       console.log("Secure Server-Side Gemini API Client Initialized successfully.");
     } catch (e) {
       console.error("Failed to initialize server-side Gemini client wrapper.", e);
@@ -98,55 +108,26 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
           parts: [{ text: h.text }]
         }));
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+        const model = ai.getGenerativeModel({
+          model: "gemini-2.0-flash",
+          systemInstruction: systemInstruction,
+        });
+
+        const result = await model.generateContent({
           contents: [
             { role: "user", parts: [{ text: contextMsg }] },
-            ...historyContents
+            ...historyContents,
+            { role: "user", parts: [{ text: message }] }
           ],
-          config: {
-            systemInstruction: systemInstruction,
+          generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                mentorPrompt: { type: Type.STRING },
-                conceptMastery: { type: Type.INTEGER },
-                knowledgeLevelUpdate: {
-                  type: Type.OBJECT,
-                  properties: {
-                    level: { type: Type.STRING, enum: ["recall", "understanding", "application", "analysis", "reflection"] },
-                    delta: { type: Type.INTEGER }
-                  }
-                },
-                detectedMisconceptions: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      type: { type: Type.STRING },
-                      description: { type: Type.STRING },
-                      severity: { type: Type.NUMBER }
-                    }
-                  }
-                },
-                socraticQuestions: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING }
-                },
-                difficultyRecommendation: { type: Type.STRING },
-                suggestedPractice: { type: Type.STRING },
-                prerequisites: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING }
-                }
-              },
-              required: ["mentorPrompt", "conceptMastery"]
-            }
+            temperature: 0.9,
+            topP: 0.95,
+            topK: 40
           }
         });
 
-        const textResponse = response.text;
+        const textResponse = result.response.text();
         if (textResponse) {
           const parsed = JSON.parse(textResponse.trim());
           return res.json(parsed);
@@ -191,11 +172,13 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     if (ai) {
       try {
         const hintPrompt = `The student is stuck on topic ${topicId} at cognitive level ${currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: hintPrompt,
+        const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: hintPrompt }] }],
+          generationConfig: { temperature: 0.8 }
         });
-        if (response.text) return res.json({ hint: response.text.trim() });
+        const text = result.response.text();
+        if (text) return res.json({ hint: text.trim() });
       } catch (e) {
         console.error("Hint generation failed, using standard fallback", e);
       }
@@ -214,25 +197,22 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
         ${misconceptionContext ? `The student previously struggled with: ${misconceptionContext}. Target this misconception.` : ""}
         Return a JSON object with: question (string), codeSnippet (optional string), expectedAnswer (string), and hints (array of strings).`;
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
+        const model = ai.getGenerativeModel({
+          model: "gemini-2.0-flash",
+        });
+
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                question: { type: Type.STRING },
-                codeSnippet: { type: Type.STRING },
-                expectedAnswer: { type: Type.STRING },
-                hints: { type: Type.ARRAY, items: { type: Type.STRING } }
-              },
-              required: ["question", "hints"]
-            }
+            temperature: 0.9,
+            topP: 0.95,
+            topK: 40
           }
         });
 
-        if (response.text) return res.json(JSON.parse(response.text.trim()));
+        const text = result.response.text();
+        if (text) return res.json(JSON.parse(text.trim()));
       } catch (e) {
         console.error("Question generation failed", e);
       }
@@ -254,37 +234,22 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
         Session data: ${JSON.stringify(sessionData)}
         Return a JSON object matching the AIEvaluationOutput structure.`;
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: {
+        const model = ai.getGenerativeModel({
+          model: "gemini-2.0-flash",
+        });
+
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                concept: { type: Type.STRING },
-                mastery: { type: Type.INTEGER },
-                knowledgeLevels: {
-                  type: Type.OBJECT,
-                  properties: {
-                    recall: { type: Type.INTEGER },
-                    understanding: { type: Type.INTEGER },
-                    application: { type: Type.INTEGER },
-                    analysis: { type: Type.INTEGER },
-                    reflection: { type: Type.INTEGER }
-                  }
-                },
-                strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-                weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
-                misconceptions: { type: Type.ARRAY, items: { type: Type.STRING } },
-                nextFocus: { type: Type.ARRAY, items: { type: Type.STRING } }
-              },
-              required: ["concept", "mastery", "knowledgeLevels", "strengths", "weaknesses", "misconceptions", "nextFocus"]
-            }
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 30
           }
         });
 
-        if (response.text) return res.json(JSON.parse(response.text.trim()));
+        const text = result.response.text();
+        if (text) return res.json(JSON.parse(text.trim()));
       } catch (e) {
         console.error("Assessment generation failed", e);
       }
@@ -301,6 +266,12 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     });
   });
 
+  // Global Error Handler (must be AFTER routes)
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Server Error:", err);
+    res.status(500).json({ error: "Internal Server Error", message: err.message });
+  });
+
   // Vite development vs production serving (Skip if deployed on Vercel)
   if (!process.env.VERCEL) {
     (async () => {
@@ -312,6 +283,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
         app.use(vite.middlewares);
       } else {
         const distPath = path.join(process.cwd(), "dist");
+        console.log("[BOOT] Serving static files from:", distPath);
         app.use(express.static(distPath));
         app.get("*", (req, res) => {
           res.sendFile(path.join(distPath, "index.html"));
@@ -321,6 +293,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
       const startListening = (port: number) => {
         const server = app.listen(port, "0.0.0.0", () => {
           console.log(`Socratic AI Node server booted successfully on http://localhost:${port}`);
+          console.log(`[BOOT] AI Enabled: ${!!ai}`);
         });
         server.on('error', (e: any) => {
           if (e.code === 'EADDRINUSE') {
