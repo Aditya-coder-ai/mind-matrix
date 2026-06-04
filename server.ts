@@ -58,8 +58,31 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     res.json({
       status: "ok",
       aiEnabled: !!ai,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 6) + "..." : "MISSING",
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Debug endpoint - tests actual Gemini API call
+  app.get("/api/debug", async (req, res) => {
+    if (!ai) {
+      return res.json({ success: false, error: "AI client not initialized - API key missing or invalid" });
+    }
+    try {
+      const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: "Reply with just: OK" }] }],
+      });
+      const text = result.response.text();
+      return res.json({ success: true, response: text?.trim() });
+    } catch (e: any) {
+      return res.json({
+        success: false,
+        error: e.message,
+        code: e.code || e.status || "unknown",
+        details: e.errorDetails || e.statusText || null
+      });
+    }
   });
 
   let ai: GoogleGenerativeAI | null = null;
