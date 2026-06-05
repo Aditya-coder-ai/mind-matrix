@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { motion } from "motion/react";
 import { 
   TrendingUp, 
@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { SubjectName, StudentProfile, TopicNode, Reflection, TrackedMisconception } from "../types";
 import { SUBJECT_COGNITIVE_friction } from "../data";
+
+// Lazy load the heavy 3D background
+const ParticleField3D = React.lazy(() => import("./ParticleField3D"));
 
 interface DashboardScreenProps {
   profile: StudentProfile;
@@ -83,8 +86,15 @@ export default function DashboardScreen({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.4 }}
-      className="p-8 max-w-7xl mx-auto w-full flex flex-col gap-8 bg-dot-pattern min-h-screen"
+      className="relative p-8 max-w-7xl mx-auto w-full flex flex-col gap-8 min-h-screen overflow-hidden"
     >
+      {/* 3D Background - Loaded asynchronously */}
+      <Suspense fallback={null}>
+        <ParticleField3D />
+      </Suspense>
+
+      {/* Foreground Content */}
+      <div className="relative z-10 flex flex-col gap-8 w-full">
       {/* Header Profile Info */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border border-outline-variant p-8 rounded-none bg-surface-card backdrop-blur-md">
         <div className="flex flex-col text-left">
@@ -346,6 +356,7 @@ export default function DashboardScreen({
           </div>
         </div>
 
+      </div>
       </div>
     </motion.div>
   );
