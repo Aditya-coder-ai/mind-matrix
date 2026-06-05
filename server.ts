@@ -170,21 +170,30 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
           contextMsg += `\n\nActive misconceptions to address:\n${activeMisconceptions.map((m: any) => `- ${m.type}: ${m.description} (severity: ${m.severity})`).join('\n')}`;
         }
 
-        const historyContents = (history || []).map((h) => ({
+        const finalSystemInstruction = systemInstruction + "\n\n" + contextMsg;
+
+        // Ensure history alternates properly. If multiple user/model messages are adjacent, the API will fail.
+        // As a safeguard, we only send the last 10 messages and ensure the last one is not a user message before we append the current user message.
+        let safeHistory = (history || []).slice(-10).map((h) => ({
           role: h.sender === "ai" ? "model" : "user",
           parts: [{ text: h.text }]
         }));
+        
+        // If the last history item is a user message, we must combine it with the current message to avoid consecutive user messages
+        let finalMessage = message;
+        if (safeHistory.length > 0 && safeHistory[safeHistory.length - 1].role === "user") {
+          finalMessage = safeHistory.pop()!.parts[0].text + "\n\n" + message;
+        }
 
         const model = ai.getGenerativeModel({
-          model: "gemini-2.5-pro",
-          systemInstruction: systemInstruction,
+          model: "gemini-1.5-pro",
+          systemInstruction: finalSystemInstruction,
         });
 
         const result = await model.generateContent({
           contents: [
-            { role: "user", parts: [{ text: contextMsg }] },
-            ...historyContents,
-            { role: "user", parts: [{ text: message }] }
+            ...safeHistory,
+            { role: "user", parts: [{ text: finalMessage }] }
           ],
           generationConfig: {
             responseMimeType: "application/json",
@@ -196,7 +205,17 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
         const textResponse = result.response.text();
         if (textResponse) {
-          const parsed = JSON.parse(textResponse.trim());
+          // Strip markdown codeblocks if the model decides to wrap the JSON
+          let cleanedText = textResponse.trim();
+          if (cleanedText.startsWith('```json')) {
+            cleanedText = cleanedText.slice(7);
+          } else if (cleanedText.startsWith('```')) {
+            cleanedText = cleanedText.slice(3);
+          }
+          if (cleanedText.endsWith('```')) {
+            cleanedText = cleanedText.slice(0, -3);
+          }
+          const parsed = JSON.parse(cleanedText.trim());
           return res.json(parsed);
         }
       } catch (error) {
@@ -239,7 +258,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     if (ai) {
       try {
         const hintPrompt = `The student is stuck on topic ${topicId} at cognitive level ${currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
-        const model = ai.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: hintPrompt }] }],
           generationConfig: { temperature: 0.5 }
