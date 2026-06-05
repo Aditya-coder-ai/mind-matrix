@@ -273,138 +273,155 @@ export default function App() {
       }
     }
 
+    // Safely extract response text — Gemini may use different field names
+    const mentorText = payload.mentorPrompt || payload.mentor_prompt || payload.response || payload.text || "Let me think about that differently. Can you rephrase your reasoning?";
+
     const aiMsg: Message = {
       id: Math.random().toString(),
       sender: "ai",
-      text: payload.mentorPrompt,
+      text: mentorText,
       timestamp: new Date().toISOString()
     };
 
-    // Update Knowledge Levels & Mastery using AssessmentEngine
-    let newLevels = { ...currentSession.knowledgeLevels };
-    let newMastery = payload.conceptMastery || currentSession.conceptMastery;
-    
-    if (payload.knowledgeLevelUpdate) {
-      const result = AssessmentEngine.applyKnowledgeUpdate(newLevels, payload.knowledgeLevelUpdate);
-      newLevels = result.newLevels;
-      newMastery = result.newMastery;
-    }
-
-    // Add detected misconceptions to global tracker
-    if (payload.detectedMisconceptions && Array.isArray(payload.detectedMisconceptions)) {
-      setTrackedMisconceptions(prev => {
-        const next = [...prev];
-        payload.detectedMisconceptions.forEach((dm: any) => {
-          const existing = next.find(m => m.topicId === activeTopicId && m.type === dm.type);
-          if (existing) {
-            existing.occurrences += 1;
-            existing.lastSeen = new Date().toISOString();
-            existing.severity = Math.min(1.0, existing.severity + 0.1);
-            
-            if (user) {
-              setDoc(doc(db, "users", user.uid, "misconceptions", existing.id), existing).catch(console.error);
-            }
-          } else {
-            const newMisc: TrackedMisconception = {
-              id: `misc-${Math.random()}`,
-              topicId: activeTopicId,
-              concept: currentTopicNode.name,
-              type: dm.type,
-              description: dm.description,
-              severity: dm.severity || 0.5,
-              occurrences: 1,
-              firstSeen: new Date().toISOString(),
-              lastSeen: new Date().toISOString(),
-              resolved: false
-            };
-            next.push(newMisc);
-            
-            if (user) {
-              setDoc(doc(db, "users", user.uid, "misconceptions", newMisc.id), newMisc).catch(console.error);
-            }
-          }
-        });
-        return next;
-      });
-    }
-
-    const newTargetLevel = AssessmentEngine.getTargetCognitiveLevel(newLevels);
-    const newDifficulty = payload.difficultyRecommendation || AssessmentEngine.getAdaptiveDifficulty(newMastery);
-
-    // Get seed question on level change or mastery completion
-    let seedQuestion = null;
-    if (newTargetLevel !== currentSession.currentLevel || newMastery >= 90) {
-      seedQuestion = AssessmentEngine.getSeedQuestion(
-        activeTopicId,
-        newTargetLevel,
-        currentSession.trackedMisconceptions,
-        currentSession.askedQuestionIds
-      );
-    }
-
-    // Sync node mastery
-    setNodes(prevNodes => 
-      prevNodes.map(n => 
-        n.id === activeTopicId 
-          ? { ...n, mastery: newMastery, knowledgeLevels: newLevels, status: newMastery >= 90 ? "mastered" : "active" }
-          : n
-      )
-    );
-
-    setSessions(prev => {
-      const latestSession = prev[activeTopicId] || currentSession;
-
-      const seedMsg = seedQuestion
-        ? { id: `seed-${seedQuestion.id}`, sender: "ai" as const, text: seedQuestion.question, timestamp: new Date().toISOString() }
-        : null;
-
-      const nextSession = {
-        ...latestSession,
-        messages: seedMsg
-          ? [...latestSession.messages, aiMsg, seedMsg]
-          : [...latestSession.messages, aiMsg],
-        conceptMastery: newMastery,
-        knowledgeLevels: newLevels,
-        currentLevel: newTargetLevel,
-        difficultyTier: newDifficulty,
-        activeMisconception: payload.detectedMisconceptions?.length > 0 ? {
-          title: payload.detectedMisconceptions[0].type,
-          description: payload.detectedMisconceptions[0].description,
-          suggestedPractice: payload.suggestedPractice || "Re-examine the core principle.",
-          prerequisites: payload.prerequisites || []
-        } : null,
-        analyzingLogic: false,
-        socraticQuestions: payload.socraticQuestions || [],
-        askedQuestionIds: seedQuestion
-          ? [...latestSession.askedQuestionIds, seedQuestion.id]
-          : latestSession.askedQuestionIds
-      };
-
-      // Background sync to Firestore (no-await)
-      if (user) {
-        setDoc(
-          doc(db, "users", user.uid, "sessions", activeTopicId).withConverter(socraticSessionConverter),
-          nextSession
-        ).catch(e => console.warn("Firestore sync failed, local state persists.", e));
-
-        // Also sync node update
-        const updatedNode = { 
-          ...currentTopicNode, 
-          mastery: newMastery, 
-          knowledgeLevels: newLevels, 
-          status: newMastery >= 90 ? "mastered" : "active" 
-        };
-        setDoc(
-          doc(db, "users", user.uid, "nodes", activeTopicId).withConverter(topicNodeConverter),
-          updatedNode
-        ).catch(console.error);
+    try {
+      // Update Knowledge Levels & Mastery using AssessmentEngine
+      let newLevels = { ...currentSession.knowledgeLevels };
+      let newMastery = typeof payload.conceptMastery === "number" ? payload.conceptMastery : currentSession.conceptMastery;
+      
+      if (payload.knowledgeLevelUpdate && typeof payload.knowledgeLevelUpdate === "object" && payload.knowledgeLevelUpdate.level) {
+        const result = AssessmentEngine.applyKnowledgeUpdate(newLevels, payload.knowledgeLevelUpdate);
+        newLevels = result.newLevels;
+        newMastery = result.newMastery;
       }
 
-      return {
+      // Add detected misconceptions to global tracker
+      if (payload.detectedMisconceptions && Array.isArray(payload.detectedMisconceptions)) {
+        setTrackedMisconceptions(prev => {
+          const next = [...prev];
+          payload.detectedMisconceptions.forEach((dm: any) => {
+            if (!dm || !dm.type) return; // skip malformed entries
+            const existing = next.find(m => m.topicId === activeTopicId && m.type === dm.type);
+            if (existing) {
+              existing.occurrences += 1;
+              existing.lastSeen = new Date().toISOString();
+              existing.severity = Math.min(1.0, existing.severity + 0.1);
+              
+              if (user) {
+                setDoc(doc(db, "users", user.uid, "misconceptions", existing.id), existing).catch(console.error);
+              }
+            } else {
+              const newMisc: TrackedMisconception = {
+                id: `misc-${Math.random()}`,
+                topicId: activeTopicId,
+                concept: currentTopicNode.name,
+                type: dm.type,
+                description: dm.description || "",
+                severity: dm.severity || 0.5,
+                occurrences: 1,
+                firstSeen: new Date().toISOString(),
+                lastSeen: new Date().toISOString(),
+                resolved: false
+              };
+              next.push(newMisc);
+              
+              if (user) {
+                setDoc(doc(db, "users", user.uid, "misconceptions", newMisc.id), newMisc).catch(console.error);
+              }
+            }
+          });
+          return next;
+        });
+      }
+
+      const newTargetLevel = AssessmentEngine.getTargetCognitiveLevel(newLevels);
+      const newDifficulty = payload.difficultyRecommendation || AssessmentEngine.getAdaptiveDifficulty(newMastery);
+
+      // Get seed question on level change or mastery completion
+      let seedQuestion = null;
+      if (newTargetLevel !== currentSession.currentLevel || newMastery >= 90) {
+        seedQuestion = AssessmentEngine.getSeedQuestion(
+          activeTopicId,
+          newTargetLevel,
+          currentSession.trackedMisconceptions,
+          currentSession.askedQuestionIds
+        );
+      }
+
+      // Sync node mastery
+      setNodes(prevNodes => 
+        prevNodes.map(n => 
+          n.id === activeTopicId 
+            ? { ...n, mastery: newMastery, knowledgeLevels: newLevels, status: newMastery >= 90 ? "mastered" : "active" }
+            : n
+        )
+      );
+
+      setSessions(prev => {
+        const latestSession = prev[activeTopicId] || currentSession;
+
+        const seedMsg = seedQuestion
+          ? { id: `seed-${seedQuestion.id}`, sender: "ai" as const, text: seedQuestion.question, timestamp: new Date().toISOString() }
+          : null;
+
+        const nextSession = {
+          ...latestSession,
+          messages: seedMsg
+            ? [...latestSession.messages, aiMsg, seedMsg]
+            : [...latestSession.messages, aiMsg],
+          conceptMastery: newMastery,
+          knowledgeLevels: newLevels,
+          currentLevel: newTargetLevel,
+          difficultyTier: newDifficulty,
+          activeMisconception: payload.detectedMisconceptions?.length > 0 ? {
+            title: payload.detectedMisconceptions[0].type || "Unknown",
+            description: payload.detectedMisconceptions[0].description || "",
+            suggestedPractice: payload.suggestedPractice || "Re-examine the core principle.",
+            prerequisites: payload.prerequisites || []
+          } : null,
+          analyzingLogic: false,
+          socraticQuestions: Array.isArray(payload.socraticQuestions) ? payload.socraticQuestions : [],
+          askedQuestionIds: seedQuestion
+            ? [...latestSession.askedQuestionIds, seedQuestion.id]
+            : latestSession.askedQuestionIds
+        };
+
+        // Background sync to Firestore (no-await)
+        if (user) {
+          setDoc(
+            doc(db, "users", user.uid, "sessions", activeTopicId).withConverter(socraticSessionConverter),
+            nextSession
+          ).catch(e => console.warn("Firestore sync failed, local state persists.", e));
+
+          // Also sync node update
+          const updatedNode = { 
+            ...currentTopicNode, 
+            mastery: newMastery, 
+            knowledgeLevels: newLevels, 
+            status: newMastery >= 90 ? "mastered" : "active" 
+          };
+          setDoc(
+            doc(db, "users", user.uid, "nodes", activeTopicId).withConverter(topicNodeConverter),
+            updatedNode
+          ).catch(console.error);
+        }
+
+        return {
+          ...prev,
+          [activeTopicId]: nextSession
+        };
+      });
+    } catch (stateError) {
+      console.error("Error processing AI response, displaying message only:", stateError);
+      // Graceful fallback: just show the AI message without updating state
+      setSessions(prev => ({
         ...prev,
-        [activeTopicId]: nextSession
-      };
-    });
+        [activeTopicId]: {
+          ...(prev[activeTopicId] || currentSession),
+          messages: [...(prev[activeTopicId]?.messages || currentSession.messages), aiMsg],
+          analyzingLogic: false
+        }
+      }));
+    }
   };
 
   const handleRequestHint = async () => {
