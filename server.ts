@@ -186,7 +186,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
         }
 
         const model = ai.getGenerativeModel({
-          model: "gemini-1.5-pro",
+          model: "gemini-2.5-flash",
           systemInstruction: finalSystemInstruction,
         });
 
@@ -258,7 +258,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     if (ai) {
       try {
         const hintPrompt = `The student is stuck on topic ${topicId} at cognitive level ${currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
-        const model = ai.getGenerativeModel({ model: "gemini-1.5-pro" });
+        const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: hintPrompt }] }],
           generationConfig: { temperature: 0.5 }
