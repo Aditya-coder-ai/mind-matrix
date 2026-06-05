@@ -274,7 +274,7 @@ export default function SettingsScreen({
               <div className="flex flex-col text-left border-t border-outline-variant pt-4">
                 <span className="text-[9px] font-mono uppercase tracking-widest font-bold text-primary-navy/40 mb-2">Assigned Model</span>
                 <span className="font-mono text-xs font-black bg-primary-container text-black px-2.5 py-1.5 rounded-none inline-block text-center uppercase tracking-wider">
-                  gemini-3.5-flash
+                  gemini-2.0-flash
                 </span>
                 <span className="text-[10px] text-primary-navy/50 mt-2 leading-relaxed">
                   Premium fast translation and reasoning for logical STEM dialogues.
@@ -301,7 +301,7 @@ export default function SettingsScreen({
               </div>
               <div className="flex justify-between pb-1">
                 <span>AI Handler:</span>
-                <span className="font-bold text-primary-navy">@google/genai</span>
+                <span className="font-bold text-primary-navy">@google/generative-ai</span>
               </div>
             </div>
           </div>
