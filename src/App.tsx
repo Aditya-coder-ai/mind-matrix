@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { AnimatePresence } from "motion/react";
 import { 
   INITIAL_STUDENT_PROFILE, 
@@ -31,6 +31,9 @@ import MasteryMapScreen from "./components/MasteryMapScreen";
 import ReflectionsScreen from "./components/ReflectionsScreen";
 import SettingsScreen from "./components/SettingsScreen";
 import KnowledgeProfileScreen from "./components/KnowledgeProfileScreen";
+
+// Lazy load the global 3D background
+const ParticleField3D = React.lazy(() => import("./components/ParticleField3D"));
 
 // Standard Socratic Pedagogical Responses
 const PEDAGOGICAL_FALLBACKS: Record<string, Array<{ userKeywords: string[]; response: any }>> = {
@@ -228,7 +231,8 @@ export default function App() {
     let payload: any = null;
 
     try {
-      const response = await fetch("/api/chat", {
+      const API_BASE_URL = import.meta.env.PROD ? "https://mind-matrix-zrp3.onrender.com" : "";
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -426,7 +430,8 @@ export default function App() {
 
   const handleRequestHint = async () => {
     try {
-      const response = await fetch("/api/hint", {
+      const API_BASE_URL = import.meta.env.PROD ? "https://mind-matrix-zrp3.onrender.com" : "";
+      const response = await fetch(`${API_BASE_URL}/api/hint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -572,27 +577,34 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-neutral-bg text-primary-navy font-sans antialiased">
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        profile={profile}
-        onRequestHint={handleRequestHint}
-        misconceptionCount={currentSubjectMisconceptionsCount}
-      />
+    <div className="flex h-screen overflow-hidden bg-neutral-bg text-primary-navy font-sans antialiased relative">
+      {/* Global 3D Background - Loaded asynchronously */}
+      <Suspense fallback={null}>
+        <ParticleField3D />
+      </Suspense>
 
-      <div className="flex-1 ml-64 flex flex-col h-screen overflow-hidden">
-        <Header
-          currentSubject={profile.currentSubject}
-          activeCategory={currentTopicNode.category}
-          activeTopicName={currentTopicNode.name}
-          onSubjectChangeClick={() => setActiveTab("settings")}
+      <div className="relative z-10 flex w-full h-full">
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          profile={profile}
+          onRequestHint={handleRequestHint}
+          misconceptionCount={currentSubjectMisconceptionsCount}
         />
-        <main className="flex-1 overflow-y-auto relative bg-dot-pattern">
-          <AnimatePresence mode="wait">
-            {renderTabContent()}
-          </AnimatePresence>
-        </main>
+
+        <div className="flex-1 ml-64 flex flex-col h-screen overflow-hidden relative">
+          <Header
+            currentSubject={profile.currentSubject}
+            activeCategory={currentTopicNode.category}
+            activeTopicName={currentTopicNode.name}
+            onSubjectChangeClick={() => setActiveTab("settings")}
+          />
+          <main className="flex-1 overflow-y-auto relative bg-dot-pattern">
+            <AnimatePresence mode="wait">
+              {renderTabContent()}
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -88,11 +88,6 @@ export default function DashboardScreen({
       transition={{ duration: 0.4 }}
       className="relative p-8 max-w-7xl mx-auto w-full flex flex-col gap-8 min-h-screen overflow-hidden"
     >
-      {/* 3D Background - Loaded asynchronously */}
-      <Suspense fallback={null}>
-        <ParticleField3D />
-      </Suspense>
-
       {/* Foreground Content */}
       <div className="relative z-10 flex flex-col gap-8 w-full">
       {/* Header Profile Info */}

@@ -20,16 +20,36 @@ function fibonacciSphere(samples: number, radius: number): THREE.Vector3[] {
   return points;
 }
 
-// Individual glowing node
+// Individual glowing node with varying colors (indigo, violet, rose)
 function NeuralNode({ position, scale = 1 }: { position: THREE.Vector3; scale?: number }) {
   const ref = useRef<THREE.Mesh>(null);
   const speed = useMemo(() => 0.5 + Math.random() * 1.5, []);
   const offset = useMemo(() => Math.random() * Math.PI * 2, []);
+  
+  const colorIndex = useMemo(() => Math.floor(Math.random() * 3), []);
+  const colors = [
+    { main: "#6366f1", emissive: "#818cf8" }, // indigo
+    { main: "#a855f7", emissive: "#c084fc" }, // violet
+    { main: "#fb7185", emissive: "#fda4af" }  // rose
+  ];
 
   useFrame(({ clock }) => {
     if (ref.current) {
-      const pulse = 0.7 + Math.sin(clock.elapsedTime * speed + offset) * 0.3;
-      ref.current.scale.setScalar(scale * pulse);
+      // Hot pink pulses randomly
+      const time = clock.elapsedTime * speed + offset;
+      const isPulsing = Math.sin(time * 0.5) > 0.85;
+      
+      const pulseScale = 0.7 + Math.sin(time) * 0.3;
+      ref.current.scale.setScalar(scale * pulseScale);
+
+      const mat = ref.current.material as THREE.MeshStandardMaterial;
+      if (isPulsing) {
+        mat.emissive.set("#ff1493"); // hot pink pulse
+        mat.emissiveIntensity = 4;
+      } else {
+        mat.emissive.set(colors[colorIndex].emissive);
+        mat.emissiveIntensity = 2;
+      }
     }
   });
 
@@ -37,8 +57,8 @@ function NeuralNode({ position, scale = 1 }: { position: THREE.Vector3; scale?: 
     <mesh ref={ref} position={position}>
       <sphereGeometry args={[0.06, 12, 12]} />
       <meshStandardMaterial
-        color="#818cf8"
-        emissive="#6366f1"
+        color={colors[colorIndex].main}
+        emissive={colors[colorIndex].emissive}
         emissiveIntensity={2}
         toneMapped={false}
       />
@@ -52,7 +72,7 @@ function NeuralConnections({ points }: { points: THREE.Vector3[] }) {
 
   const geometry = useMemo(() => {
     const positions: number[] = [];
-    const maxDist = 1.2;
+    const maxDist = 1.3;
 
     for (let i = 0; i < points.length; i++) {
       for (let j = i + 1; j < points.length; j++) {
@@ -72,13 +92,14 @@ function NeuralConnections({ points }: { points: THREE.Vector3[] }) {
   useFrame(({ clock }) => {
     if (ref.current && ref.current.material) {
       const mat = ref.current.material as THREE.LineBasicMaterial;
-      mat.opacity = 0.15 + Math.sin(clock.elapsedTime * 0.5) * 0.08;
+      // Perspective fading is handled naturally by distance from camera
+      mat.opacity = 0.15 + Math.sin(clock.elapsedTime * 0.5) * 0.05;
     }
   });
 
   return (
     <lineSegments ref={ref} geometry={geometry}>
-      <lineBasicMaterial color="#818cf8" transparent opacity={0.18} />
+      <lineBasicMaterial color="#a855f7" transparent opacity={0.2} depthWrite={false} />
     </lineSegments>
   );
 }
@@ -86,37 +107,37 @@ function NeuralConnections({ points }: { points: THREE.Vector3[] }) {
 // Rotating brain group
 function BrainGroup() {
   const groupRef = useRef<THREE.Group>(null);
-  const points = useMemo(() => fibonacciSphere(80, 2), []);
+  const points = useMemo(() => fibonacciSphere(100, 2.2), []);
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y = clock.elapsedTime * 0.08;
-      groupRef.current.rotation.x = Math.sin(clock.elapsedTime * 0.05) * 0.15;
+      groupRef.current.rotation.y = clock.elapsedTime * 0.1;
+      groupRef.current.rotation.x = Math.sin(clock.elapsedTime * 0.05) * 0.1;
     }
   });
 
   return (
     <group ref={groupRef}>
-      {/* Inner glowing core */}
-      <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0.5}>
+      {/* Inner soft purple radial glow */}
+      <Float speed={1} rotationIntensity={0.2} floatIntensity={0.2}>
         <mesh>
-          <sphereGeometry args={[1.3, 32, 32]} />
+          <sphereGeometry args={[1.5, 32, 32]} />
           <MeshDistortMaterial
-            color="#312e81"
-            emissive="#4338ca"
-            emissiveIntensity={0.5}
+            color="#2e1065"
+            emissive="#4c1d95"
+            emissiveIntensity={0.8}
             transparent
-            opacity={0.15}
-            distort={0.25}
+            opacity={0.3}
+            distort={0.4}
             speed={2}
-            roughness={0.2}
+            roughness={0.1}
           />
         </mesh>
       </Float>
 
       {/* Neural nodes */}
       {points.map((p, i) => (
-        <NeuralNode key={i} position={p} scale={0.6 + Math.random() * 0.8} />
+        <NeuralNode key={i} position={p} scale={0.5 + Math.random() * 0.7} />
       ))}
 
       {/* Connections */}
@@ -130,18 +151,18 @@ function AmbientParticles() {
   const ref = useRef<THREE.Points>(null);
 
   const [positions] = useMemo(() => {
-    const pos = new Float32Array(200 * 3);
-    for (let i = 0; i < 200; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 12;
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 12;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 12;
+    const pos = new Float32Array(150 * 3);
+    for (let i = 0; i < 150; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 15;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 15;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 15;
     }
     return [pos];
   }, []);
 
   useFrame(({ clock }) => {
     if (ref.current) {
-      ref.current.rotation.y = clock.elapsedTime * 0.02;
+      ref.current.rotation.y = clock.elapsedTime * 0.015;
     }
   });
 
@@ -150,33 +171,38 @@ function AmbientParticles() {
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={200}
+          count={150}
           array={positions}
           itemSize={3}
         />
       </bufferGeometry>
       <pointsMaterial
-        color="#6366f1"
-        size={0.03}
+        color="#fb7185"
+        size={0.04}
         transparent
-        opacity={0.6}
+        opacity={0.4}
         sizeAttenuation
       />
     </points>
   );
 }
 
-export default function NeuralBrain3D() {
+interface NeuralBrain3DProps {
+  className?: string;
+}
+
+export default function NeuralBrain3D({ className = "absolute inset-0 z-0" }: NeuralBrain3DProps) {
   return (
-    <div className="absolute inset-0 z-0">
+    <div className={className}>
       <Canvas
-        camera={{ position: [0, 0, 5.5], fov: 50 }}
+        camera={{ position: [0, 0, 6], fov: 45 }}
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent' }}
       >
-        <ambientLight intensity={0.3} />
-        <pointLight position={[5, 5, 5]} intensity={0.8} color="#818cf8" />
-        <pointLight position={[-5, -3, 3]} intensity={0.4} color="#a78bfa" />
+        <ambientLight intensity={0.4} />
+        <pointLight position={[5, 5, 5]} intensity={1.5} color="#c084fc" />
+        <pointLight position={[-5, -3, 3]} intensity={1} color="#fb7185" />
+        <pointLight position={[0, 5, -5]} intensity={0.5} color="#6366f1" />
 
         <BrainGroup />
         <AmbientParticles />

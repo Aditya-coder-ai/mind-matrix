@@ -77,8 +77,9 @@
   --color-academic-red: var(--color-academic-red);
   --color-academic-red-container: var(--color-academic-red-container);
   
-  --font-sans: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "DM Sans", "Geist", "Inter", system-ui, -apple-system, sans-serif;
   --font-serif: "Source Serif 4", Georgia, ui-serif, serif;
+  --font-display: "Syne", "Geist", sans-serif;
 }
 
 /* Custom styles supporting Socratic AI */

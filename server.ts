@@ -157,13 +157,13 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     if (ai) {
       try {
         const systemInstruction = 
-          "You are Socratic AI, an intellectual STEM Socratic Mentor. " +
+          "You are Socratic AI, an elite, highly accurate STEM Socratic Mentor. " +
           "Your mission is to help students learn by asking guiding Socratic questions. " +
           "You must analyze their reasoning, detect any misconceptions, update their cognitive mastery level, " +
           "and provide follow-up Socratic questions based on their target cognitive level (Recall, Understanding, Application, Analysis, Reflection). " +
-          "Return a JSON object with: mentorPrompt, conceptMastery (1-100), knowledgeLevelUpdate (object with level and delta), " +
+          "Return a JSON object with: reasoning (string, your step-by-step logical analysis of the student's message), mentorPrompt, conceptMastery (1-100), knowledgeLevelUpdate (object with level and delta), " +
           "detectedMisconceptions (array), socraticQuestions (array of strings), difficultyRecommendation (beginner|intermediate|advanced), " +
-          "suggestedPractice, and prerequisites.";
+          "suggestedPractice, and prerequisites. Always think step-by-step in the 'reasoning' field before populating the rest.";
 
         let contextMsg = `Student is learning topic: ${topicId}\nTarget Cognitive Level: ${currentLevel || "understanding"}`;
         if (activeMisconceptions && activeMisconceptions.length > 0) {
@@ -176,7 +176,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
         }));
 
         const model = ai.getGenerativeModel({
-          model: "gemini-2.5-flash",
+          model: "gemini-2.5-pro",
           systemInstruction: systemInstruction,
         });
 
@@ -188,7 +188,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
           ],
           generationConfig: {
             responseMimeType: "application/json",
-            temperature: 0.9,
+            temperature: 0.4,
             topP: 0.95,
             topK: 40
           }
@@ -239,10 +239,10 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     if (ai) {
       try {
         const hintPrompt = `The student is stuck on topic ${topicId} at cognitive level ${currentLevel || "understanding"}. Provide a single, extremely brief guidance hint (1-3 lines) in a warm, encouraging Socratic tone pointing them towards a self-realization. Do not solve it for them! Use Source Serif style.`;
-        const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = ai.getGenerativeModel({ model: "gemini-2.5-pro" });
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: hintPrompt }] }],
-          generationConfig: { temperature: 0.8 }
+          generationConfig: { temperature: 0.5 }
         });
         const text = result.response.text();
         if (text) return res.json({ hint: text.trim() });
