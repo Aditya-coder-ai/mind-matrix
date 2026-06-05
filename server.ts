@@ -96,6 +96,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
   app.use("/api/hint", rateLimiter);
   app.use("/api/generate-question", rateLimiter);
   app.use("/api/assess", rateLimiter);
+  app.use("/api/reflect", rateLimiter);
 
   // Health check endpoint for Render
   app.get("/api/health", (req, res) => {
@@ -349,6 +350,87 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
       weaknesses: ["Complex application"],
       misconceptions: [],
       nextFocus: ["Practice problems"]
+    });
+  });
+
+  // ─── 5. Cognitive Reflection Endpoint ──────────────────────────────────────
+  app.post("/api/reflect", async (req, res) => {
+    const { reflection, topicId } = req.body;
+
+    if (ai) {
+      try {
+        const systemInstruction = `You are a Socratic AI Cognitive Mentor embedded in a student learning platform.
+
+When a student submits a reflection about what they found difficult while studying, you must:
+
+STEP 1 — TOPIC DETECTION
+Analyze the student's statement and identify:
+- The subject domain (e.g., Physics, Chemistry, Mathematics, Computer Science, Biology)
+- The specific concept or topic they are struggling with (e.g., "Buoyancy and Density", "Binary Search Trees", "Newton's Laws")
+- The type of confusion they are experiencing: Conceptual misunderstanding, Procedural gap, Transfer failure, or Memory/recall gap.
+
+STEP 2 — GENERATE INSIGHT
+Based on the detected topic and confusion type, generate a structured mentor insight with:
+1. Topic Label — One line: "Subject: [domain] → Topic: [specific concept]"
+2. Diagnosis — What cognitive gap does this reflection reveal? Be precise.
+3. Reframe — Give them a new mental model or analogy that corrects the misunderstanding.
+4. Socratic Question — Ask ONE probing question that pushes their thinking one level deeper.
+5. Next Step — Suggest one targeted micro-action.
+
+TONE: Be warm, intellectually rigorous, and encouraging — like a brilliant tutor who genuinely cares. Never just validate. Always push thinking forward.
+
+OUTPUT FORMAT (return as JSON):
+{
+  "detectedSubject": "",
+  "detectedTopic": "",
+  "confusionType": "",
+  "diagnosis": "",
+  "reframe": "",
+  "socraticQuestion": "",
+  "nextStep": "",
+  "insightSummary": ""
+}`;
+
+        const model = ai.getGenerativeModel({
+          model: "gemini-2.5-flash",
+          systemInstruction: systemInstruction
+        });
+
+        const prompt = `Student Reflection Context Topic ID: ${topicId}\nStudent Reflection:\n"${reflection}"`;
+
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40
+          }
+        });
+
+        const text = result.response.text();
+        if (text) {
+          let cleanedText = text.trim();
+          if (cleanedText.startsWith('\`\`\`json')) cleanedText = cleanedText.slice(7);
+          else if (cleanedText.startsWith('\`\`\`')) cleanedText = cleanedText.slice(3);
+          if (cleanedText.endsWith('\`\`\`')) cleanedText = cleanedText.slice(0, -3);
+          return res.json(JSON.parse(cleanedText.trim()));
+        }
+      } catch (e) {
+        console.error("Reflection generation failed", e);
+      }
+    }
+
+    // Fallback if AI fails or is not enabled
+    return res.json({
+      detectedSubject: "General",
+      detectedTopic: topicId || "Study Methods",
+      confusionType: "Conceptual misunderstanding",
+      diagnosis: "The student is facing friction in translating abstract concepts to concrete models.",
+      reframe: "Think of this process like building a strong foundation before erecting the walls.",
+      socraticQuestion: "What specific step feels the most uncertain when you attempt this?",
+      nextStep: "Review the primary definitions and try one basic example step-by-step.",
+      insightSummary: "A crucial realization. You successfully identified a friction point, marking significant progress in your cognitive development."
     });
   });
 

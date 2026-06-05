@@ -41,36 +41,52 @@ export default function ReflectionsScreen({
   const [answer, setAnswer] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [generatedFeedback, setGeneratedFeedback] = useState<string | null>(null);
+  const [generatedInsight, setGeneratedInsight] = useState<any | null>(null);
 
-  // Simple pedagogical evaluation generator
-  const triggerSelfEvaluation = () => {
+  const triggerSelfEvaluation = async () => {
     if (!answer.trim()) return;
     setIsSubmitting(true);
     
-    setTimeout(() => {
-      let feedback = "An impressive analysis of your friction points! Recognizing how weight scales differ from particle counts is a crucial step towards mastering Chemistry.";
-      if (activeNode?.id === "newtons-second-law") {
-        feedback = "Outstanding analytical breakdown. Realizing that vertical normal forces must equalize weight force components ensures stability in Newton acceleration models.";
-      } else if (activeNode?.id === "limits-math") {
-        feedback = "Thoughtful piecewise reasoning. Approaching boundaries from alternate limits is a foundational concept. We will focus on discontinous piecewise calculations next.";
+    try {
+      const API_BASE_URL = import.meta.env.PROD ? "https://mind-matrix-zrp3.onrender.com" : "";
+      const response = await fetch(`${API_BASE_URL}/api/reflect`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reflection: answer,
+          topicId: activeNode?.id || "general",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate reflection insight");
       }
 
-      const extendedFeedback = `${feedback} This deep analysis has significantly improved your Level 5 (Reflection) cognitive mastery model (+15%).`;
-
-      setGeneratedFeedback(extendedFeedback);
+      const insightData = await response.json();
+      setGeneratedInsight(insightData);
       
       onAddReflection({
         topicId: activeNode?.id || "general",
         topicName: activeNode?.name || "General Study",
         question: promptText,
         answer: answer,
-        feedback: feedback
+        feedback: insightData.insightSummary || insightData.diagnosis || "Reflection logged.",
       });
 
-      setIsSubmitting(false);
       setSuccess(true);
-    }, 1500);
+    } catch (error) {
+      console.error(error);
+      // Fallback in case of error
+      setGeneratedInsight({
+        insightSummary: "Your reflection has been securely logged.",
+        diagnosis: "Unable to reach Socratic AI at this moment."
+      });
+      setSuccess(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -145,19 +161,48 @@ export default function ReflectionsScreen({
           <motion.section 
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-primary-navy/[0.03] border border-primary-navy/20 rounded-2xl p-6 shadow-xs flex gap-4 items-start text-left mt-2"
+            className="bg-primary-navy/[0.03] border border-primary-navy/20 rounded-2xl p-6 shadow-xs flex flex-col gap-4 text-left mt-2"
           >
-            <div className="w-10 h-10 rounded-full bg-primary-container border border-primary-navy/15 text-on-primary flex items-center justify-center shrink-0 shadow-xs">
-              <Brain size={20} className="text-primary-navy text-primary-navy" />
+            <div className="flex gap-4 items-start border-b border-primary-navy/10 pb-4">
+              <div className="w-10 h-10 rounded-full bg-primary-container border border-primary-navy/15 text-on-primary flex items-center justify-center shrink-0 shadow-xs">
+                <Brain size={20} className="text-primary-navy text-primary-navy" />
+              </div>
+              <div>
+                <h3 className="font-sans font-bold text-xs text-primary-navy uppercase tracking-wider mb-1">
+                  Mentor Insights
+                </h3>
+                <p className="font-serif text-base text-primary-navy/95 leading-relaxed">
+                  {generatedInsight?.insightSummary || reflections[reflections.length - 1]?.feedback || "Reflections logged successfully. Socratic AI has recalibrated your visual Mastery Map and recommended learning coordinates."}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-sans font-bold text-xs text-primary-navy uppercase tracking-wider mb-1">
-                Mentor Insights
-              </h3>
-              <p className="font-serif text-base text-primary-navy/95 leading-relaxed">
-                {generatedFeedback || reflections[reflections.length - 1]?.feedback || "Reflections logged successfully. Socratic AI has recalibrated your visual Mastery Map and recommended learning coordinates."}
-              </p>
-            </div>
+            
+            {generatedInsight && generatedInsight.diagnosis && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div>
+                  <h4 className="text-[10px] font-mono uppercase tracking-widest font-bold text-primary-navy/60 mb-2">Cognitive Diagnosis</h4>
+                  <p className="font-sans text-sm text-primary-navy/80 leading-relaxed bg-white/40 p-3 rounded-lg border border-outline-variant/30">{generatedInsight.diagnosis}</p>
+                </div>
+                {generatedInsight.reframe && (
+                  <div>
+                    <h4 className="text-[10px] font-mono uppercase tracking-widest font-bold text-primary-navy/60 mb-2">Mental Reframe</h4>
+                    <p className="font-sans text-sm text-primary-navy/80 leading-relaxed bg-white/40 p-3 rounded-lg border border-outline-variant/30">{generatedInsight.reframe}</p>
+                  </div>
+                )}
+                {generatedInsight.socraticQuestion && (
+                  <div className="md:col-span-2">
+                    <h4 className="text-[10px] font-mono uppercase tracking-widest font-bold text-primary-container mb-2">Socratic Inquiry</h4>
+                    <p className="font-serif text-lg text-primary-navy italic border-l-2 border-primary-container pl-4 my-2">{generatedInsight.socraticQuestion}</p>
+                  </div>
+                )}
+                {generatedInsight.nextStep && (
+                  <div className="md:col-span-2 flex items-center gap-2 mt-2 bg-primary-navy/5 p-3 rounded-xl border border-primary-navy/10">
+                    <CheckCircle size={16} className="text-primary-navy/60" />
+                    <span className="font-sans text-sm font-medium text-primary-navy"><strong>Recommended Action:</strong> {generatedInsight.nextStep}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </motion.section>
         )}
       </AnimatePresence>

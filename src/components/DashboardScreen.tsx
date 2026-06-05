@@ -1,5 +1,5 @@
-import React, { Suspense } from "react";
-import { motion } from "motion/react";
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { 
   TrendingUp, 
   RefreshCw, 
@@ -12,6 +12,25 @@ import {
 } from "lucide-react";
 import { SubjectName, StudentProfile, TopicNode, Reflection, TrackedMisconception } from "../types";
 import { SUBJECT_COGNITIVE_friction } from "../data";
+
+// Helper for smooth bezier curves
+const generateSmoothPath = (points: {x: number, y: number}[]) => {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x},${points[0].y}`;
+  let d = `M ${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2 === points.length ? i + 1 : i + 2];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+};
 
 // Lazy load the heavy 3D background
 const ParticleField3D = React.lazy(() => import("./ParticleField3D"));
@@ -63,6 +82,7 @@ export default function DashboardScreen({
 }: DashboardScreenProps) {
   const currentSubject = profile.currentSubject;
   const theme = SUBJECT_THEMES[currentSubject];
+  const [hoveredChartNode, setHoveredChartNode] = useState<{node: TopicNode, x: number, y: number} | null>(null);
   
   const subjectNodes = nodes.filter(n => n.subject === currentSubject);
   const frictionAreas = trackedMisconceptions
@@ -148,28 +168,83 @@ export default function DashboardScreen({
             <div className="absolute left-0 right-0 bottom-1 border-t border-dashed border-outline-variant text-[9px] font-mono uppercase tracking-widest text-primary-navy/30 pl-2">10% (Novice)</div>
 
             {/* Simulated graph elements */}
-            <svg className="w-full h-full absolute inset-0" preserveAspectRatio="none" viewBox="0 0 100 100">
+            <svg className="w-full h-full absolute inset-0 overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
               <path 
                 className="text-primary-container" 
-                d={theme.curvePts} 
+                d={generateSmoothPath(
+                  subjectNodes.map((node, index) => ({
+                    x: subjectNodes.length > 1 ? (index / (subjectNodes.length - 1)) * 100 : 50,
+                    y: 90 - (node.mastery / 100) * 80
+                  }))
+                )} 
                 fill="none" 
                 stroke="currentColor" 
                 strokeWidth="2.5"
                 strokeLinecap="round"
+                style={{ transition: "all 0.5s ease-in-out" }}
               />
               {/* Nodes along the path */}
-              <circle className="text-primary-navy/40" cx="0" cy="83" fill="currentColor" r="3.5" />
-              <circle className="text-primary-navy/60" cx="33" cy="65" fill="currentColor" r="3.5" />
-              <circle className="text-primary-navy/80" cx="66" cy="40" fill="currentColor" r="3.5" />
-              <circle className="text-primary-container" cx="100" cy="12" fill="currentColor" r="5" />
+              {subjectNodes.map((node, index) => {
+                const x = subjectNodes.length > 1 ? (index / (subjectNodes.length - 1)) * 100 : 50;
+                const y = 90 - (node.mastery / 100) * 80;
+                const isHovered = hoveredChartNode?.node.id === node.id;
+                return (
+                  <circle 
+                    key={node.id}
+                    className={`cursor-pointer transition-all duration-300 ${
+                      isHovered ? "text-primary-container drop-shadow-md" : "text-primary-navy/50 hover:text-primary-navy"
+                    }`} 
+                    cx={x} 
+                    cy={y} 
+                    fill="currentColor" 
+                    r={isHovered ? 4.5 : 3.5}
+                    onMouseEnter={() => setHoveredChartNode({ node, x, y })}
+                    onMouseLeave={() => setHoveredChartNode(null)}
+                    onClick={() => onNavigateToTopic(node.id)}
+                  />
+                );
+              })}
             </svg>
+
+            {/* Tooltip Overlay */}
+            <AnimatePresence>
+              {hoveredChartNode && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="absolute z-50 pointer-events-none bg-surface-card border border-outline-variant p-3 shadow-xl flex flex-col gap-1 min-w-[140px]"
+                  style={{
+                    left: `calc(${hoveredChartNode.x}% - 70px)`,
+                    top: `calc(${hoveredChartNode.y}% - 70px)`,
+                  }}
+                >
+                  <span className="font-mono text-[9px] font-bold uppercase text-primary-navy truncate">
+                    {hoveredChartNode.node.name}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-primary-container font-extrabold uppercase">
+                      {hoveredChartNode.node.mastery}%
+                    </span>
+                    <span className="font-mono text-[8px] text-primary-navy/50 uppercase">Mastery</span>
+                  </div>
+                  <span className={`font-mono text-[8px] uppercase tracking-widest ${
+                    hoveredChartNode.node.status === "mastered" ? "text-academic-green-light" :
+                    hoveredChartNode.node.status === "active" ? "text-primary-container" : "text-primary-navy/40"
+                  }`}>
+                    {hoveredChartNode.node.status}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="flex justify-between mt-3 font-mono text-[9px] uppercase tracking-widest text-primary-navy/40 font-semibold">
-            <span>Week 1</span>
-            <span>Week 2</span>
-            <span>Week 3</span>
-            <span>Current Progress</span>
+            {subjectNodes.map((node, index) => (
+              <span key={node.id} className="truncate w-1/4 text-center">
+                {subjectNodes.length > 4 && index % 2 !== 0 ? "" : node.name}
+              </span>
+            ))}
           </div>
         </div>
 

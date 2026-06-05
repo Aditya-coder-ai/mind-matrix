@@ -19,9 +19,10 @@ interface SidebarProps {
   profile: StudentProfile;
   onRequestHint: () => void;
   misconceptionCount?: number;
+  activeTopicName?: string;
 }
 
-export default function Sidebar({ activeTab, setActiveTab, profile, onRequestHint, misconceptionCount = 0 }: SidebarProps) {
+export default function Sidebar({ activeTab, setActiveTab, profile, onRequestHint, misconceptionCount = 0, activeTopicName }: SidebarProps) {
   const { user, signOut } = useAuth();
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -86,10 +87,15 @@ export default function Sidebar({ activeTab, setActiveTab, profile, onRequestHin
         {activeTab !== "settings" && (
           <button
             onClick={onRequestHint}
-            className="w-full py-3 px-4 rounded-xl border border-primary-container/40 hover:border-primary-container text-primary-container font-mono font-bold tracking-widest text-[10px] uppercase hover:bg-primary-container hover:text-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+            className="w-full py-3 px-4 rounded-xl border border-primary-container/40 hover:border-primary-container text-primary-container font-mono font-bold tracking-widest text-[10px] uppercase hover:bg-primary-container hover:text-black transition-all flex flex-col items-center justify-center gap-1 cursor-pointer shadow-sm text-center"
           >
-            <Lightbulb size={14} className="text-primary-container" />
-            <span>Request Hint</span>
+            <div className="flex items-center gap-2">
+              <Lightbulb size={14} className="text-primary-container group-hover:text-black" />
+              <span>Request Hint</span>
+            </div>
+            {activeTopicName && (
+              <span className="text-[8px] opacity-70 truncate max-w-full px-2">({activeTopicName})</span>
+            )}
           </button>
         )}
 

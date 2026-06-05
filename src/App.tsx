@@ -429,6 +429,7 @@ export default function App() {
   };
 
   const handleRequestHint = async () => {
+    setActiveTab("chat");
     try {
       const API_BASE_URL = import.meta.env.PROD ? "https://mind-matrix-zrp3.onrender.com" : "";
       const response = await fetch(`${API_BASE_URL}/api/hint`, {
@@ -590,6 +591,7 @@ export default function App() {
           profile={profile}
           onRequestHint={handleRequestHint}
           misconceptionCount={currentSubjectMisconceptionsCount}
+          activeTopicName={currentTopicNode.name}
         />
 
         <div className="flex-1 ml-64 flex flex-col h-screen overflow-hidden relative">
