@@ -53,6 +53,50 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     next();
   });
 
+  // ─── Rate Limiter (in-memory, per IP) ─────────────────────────────────────
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+  const RATE_LIMIT_MAX = 10; // max 10 AI requests per minute per IP
+  const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
+  // Cleanup stale entries every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of rateLimitStore) {
+      if (now > val.resetTime) rateLimitStore.delete(key);
+    }
+  }, 5 * 60 * 1000);
+
+  const rateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+    const key = String(ip);
+    const now = Date.now();
+
+    const entry = rateLimitStore.get(key);
+    if (!entry || now > entry.resetTime) {
+      rateLimitStore.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+      return next();
+    }
+
+    if (entry.count >= RATE_LIMIT_MAX) {
+      const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json({
+        error: "Too many requests",
+        message: `Rate limit exceeded. Try again in ${retryAfter}s.`,
+        retryAfter
+      });
+    }
+
+    entry.count++;
+    return next();
+  };
+
+  // Apply rate limiter only to AI-powered endpoints
+  app.use("/api/chat", rateLimiter);
+  app.use("/api/hint", rateLimiter);
+  app.use("/api/generate-question", rateLimiter);
+  app.use("/api/assess", rateLimiter);
+
   // Health check endpoint for Render
   app.get("/api/health", (req, res) => {
     res.json({
